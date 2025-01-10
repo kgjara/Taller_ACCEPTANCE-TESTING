@@ -1,93 +1,94 @@
 from behave import given, when, then
-from datetime import date
+from todo_list import TodoManager, Task
+from datetime import datetime, timedelta
 
-# Clase para simular el gestor de la lista de tareas
-class TodoListManager:
-    def __init__(self):
-        self.tasks = []
+@given('I have started the to-do list manager')
+def step_impl(context):
+    context.todo_manager = TodoManager(filename='test_tasks.json')
 
-    def add_task(self, task_name):
-        self.tasks.append({"task": task_name, "status": "Pending"})
+@when('I add a new task with title "{title}", description "{description}", due date "{due_date}", priority "{priority}", and category "{category}"')
+def step_impl(context, title, description, due_date, priority, category):
+    task = Task(title, description, due_date, priority, category)
+    context.todo_manager.tasks.append(task)
+    context.todo_manager.save_tasks()
 
-    def list_tasks(self):
-        return [task["task"] for task in self.tasks]
+@then('the task should be added successfully')
+def step_impl(context):
+    assert len(context.todo_manager.tasks) > 0
 
-    def mark_completed(self, task_name):
-        for task in self.tasks:
-            if task["task"] == task_name:
-                task["status"] = "Completed"
+@when('I list all tasks')
+def step_impl(context):
+    context.tasks_list = context.todo_manager.tasks
 
-    def clear_all_tasks(self):
-        self.tasks.clear()
+@then('I should see the task "{title}" in the list')
+def step_impl(context, title):
+    titles = [task.title for task in context.tasks_list]
+    assert title in titles
 
-# Crear una instancia del gestor de tareas
-todo_list_manager = TodoListManager()
+@when('I mark the task "{title}" as completed')
+def step_impl(context, title):
+    for task in context.todo_manager.tasks:
+        if task.title == title:
+            task.completed = True
+            task.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            context.todo_manager.save_tasks()
+            break
 
-# Paso 1: Cuando la lista de tareas está vacía
-@given('the to-do list is empty')
-def step_impl_given_empty_list(context):
-    todo_list_manager.clear_all_tasks()  # Asegurarse de que la lista esté vacía
+@then('the task should be marked as completed')
+def step_impl(context):
+    for task in context.todo_manager.tasks:
+        if task.completed:
+            assert task.completed_at is not None
 
-# Paso 2: Cuando el usuario agrega una tarea
-@when('the user adds a task "{task_name}"')
-def step_impl_add_task(context, task_name):
-    todo_list_manager.add_task(task_name)
+@when('I delete all tasks')
+def step_impl(context):
+    context.todo_manager.tasks = []
+    context.todo_manager.save_tasks()
 
-# Paso 3: Verificar que la tarea se haya agregado a la lista
-@then('the to-do list should contain "{task_name}"')
-def step_impl_check_task_in_list(context, task_name):
-    tasks = todo_list_manager.list_tasks()
-    assert task_name in tasks, f"Task '{task_name}' not found in the list"
+@then('there should be no tasks in the list')
+def step_impl(context):
+    assert len(context.todo_manager.tasks) == 0
 
-# Paso 4: Configuración de tareas en la lista (para listado de tareas)
-@given('the to-do list contains tasks:')
-def step_impl_given_list_of_tasks(context):
-    todo_list_manager.clear_all_tasks()  # Asegurarse de que la lista esté vacía
-    for row in context.table:
-        task_name = row["Task"]
-        todo_list_manager.add_task(task_name)
+@when('I filter tasks by category "{category}"')
+def step_impl(context, category):
+    context.filtered_tasks = [task for task in context.todo_manager.tasks if task.category.lower() == category.lower()]
 
-# Paso 5: Listar todas las tareas
-@when('the user lists all tasks')
-def step_impl_list_all_tasks(context):
-    context.task_list = todo_list_manager.list_tasks()  # Guardar las tareas listadas
+@then('I should see only tasks in the "{category}" category')
+def step_impl(context, category):
+    for task in context.filtered_tasks:
+        assert task.category.lower() == category.lower()
 
-# Paso 6: Verificar la lista de tareas
-@then('the output should contain:')
-def step_impl_check_list_output(context):
-    output = context.task_list
-    expected_tasks = [row["Task"] for row in context.table]
-    assert sorted(output) == sorted(expected_tasks), f"Expected tasks {expected_tasks}, but got {output}"
+@when('I show overdue tasks')
+def step_impl(context):
+    today = datetime.now().date()
+    context.overdue_tasks = []
+    for task in context.todo_manager.tasks:
+        if not task.completed:
+            due_date = datetime.strptime(task.due_date, "%Y-%m-%d").date()
+            if due_date < today:
+                context.overdue_tasks.append(task)
 
-# Paso 7: Configuración de tareas con estado "Pending" o "Completed"
-@given('the to-do list contains completed tasks:')
-def step_impl_given_list_of_tasks_for_completed(context):
-    todo_list_manager.clear_all_tasks()  # Limpiar la lista antes de agregar tareas
-    for row in context.table:
-        task_name = row["Task"]
-        status = row["Status"]
-        todo_list_manager.add_task(task_name)
-        if status == "Completed":
-            todo_list_manager.mark_completed(task_name)
+@then('I should see the list of overdue tasks')
+def step_impl(context):
+    assert len(context.overdue_tasks) > 0
 
-# Paso 8: Marcar una tarea como completada
-@when('the user marks task "{task_name}" as completed')
-def step_impl_mark_task_completed(context, task_name):
-    todo_list_manager.mark_completed(task_name)
+# Implementing missing steps
+@given('I have a task with title "{title}"')
+def step_impl(context, title):
+    task = Task(title, "Description", "2025-01-10", "High", "General")
+    context.todo_manager.tasks.append(task)
+    context.todo_manager.save_tasks()
 
-# Paso 9: Verificar que la tarea esté marcada como completada
-@then('the to-do list should show task "{task_name}" as completed')
-def step_impl_check_task_completed(context, task_name):
-    task_status = next((task for task in todo_list_manager.tasks if task["task"] == task_name), None)
-    assert task_status is not None and task_status["status"] == "Completed", f"Task '{task_name}' was not marked as completed"
+@given('I have tasks in different categories')
+def step_impl(context):
+    task1 = Task("Task 1", "Description 1", "2025-01-10", "High", "Work")
+    task2 = Task("Task 2", "Description 2", "2025-01-11", "Medium", "Shopping")
+    context.todo_manager.tasks.extend([task1, task2])
+    context.todo_manager.save_tasks()
 
-# Paso 10: Limpiar toda la lista de tareas
-@when('the user clears the to-do list')
-def step_impl_clear_all_tasks(context):
-    todo_list_manager.clear_all_tasks()
-
-# Paso 11: Verificar que la lista de tareas esté vacía
-@then('the to-do list should be empty')
-def step_impl_check_empty_list(context):
-    tasks = todo_list_manager.list_tasks()
-    assert len(tasks) == 0, f"The to-do list is not empty, it contains {tasks}"
+@given('I have overdue tasks')
+def step_impl(context):
+    overdue_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    task = Task("Overdue Task", "Description", overdue_date, "High", "General")
+    context.todo_manager.tasks.append(task)
+    context.todo_manager.save_tasks()
